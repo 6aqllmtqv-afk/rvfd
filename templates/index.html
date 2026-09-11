@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BestChange Data Monitor</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f5f7fb;color:#18202a}
+*{box-sizing:border-box}body{margin:0}.wrap{max-width:1200px;margin:0 auto;padding:28px 18px 50px}
+h1{font-size:28px;margin:0 0 8px}.sub{color:#667085;margin-bottom:24px}.panel{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:18px;box-shadow:0 3px 18px rgba(16,24,40,.05)}
+.controls{display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end}.field label{display:block;font-size:12px;color:#667085;margin:0 0 7px}.field select{width:100%;height:44px;border:1px solid #d0d5dd;border-radius:9px;padding:0 12px;font-size:15px;background:#fff}.btn{height:44px;border:0;border-radius:9px;padding:0 20px;font-weight:700;background:#111827;color:white;cursor:pointer}.btn:disabled{opacity:.5;cursor:wait}
+.status{margin-top:14px;color:#667085;font-size:13px}.error{color:#b42318}.meta{display:flex;gap:20px;flex-wrap:wrap;margin:22px 0 12px;font-size:13px;color:#667085}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;min-width:850px}.table th,.table td{padding:14px 12px;border-bottom:1px solid #eaecf0;text-align:left}.table th{font-size:12px;color:#667085;font-weight:600;background:#f9fafb;position:sticky;top:0}.table td{font-size:14px}.rate{font-weight:750}.reserve{white-space:nowrap}.link{color:#175cd3;text-decoration:none}.empty{padding:34px;text-align:center;color:#667085}.search{width:100%;height:40px;border:1px solid #d0d5dd;border-radius:8px;padding:0 11px;margin-top:12px}.small{font-size:12px;color:#98a2b3}.badge{display:inline-flex;padding:4px 8px;border-radius:999px;background:#ecfdf3;color:#027a48;font-size:11px;font-weight:700}
+@media(max-width:760px){.controls{grid-template-columns:1fr}.btn{width:100%}}
+</style>
+</head>
+<body><div class="wrap">
+<h1>Exchange monitor</h1><div class="sub">Выбери направление — ниже появятся все доступные предложения BestChange по этой паре.</div>
+<div class="panel">
+<div class="controls">
+<div class="field"><label>Отдаю</label><select id="from"></select></div>
+<div class="field"><label>Получаю</label><select id="to"></select></div>
+<button class="btn" id="load">Показать обменники</button>
+</div>
+<input class="search" id="search" placeholder="Фильтр по названию обменника…">
+<div class="status" id="status">Загрузка списка валют…</div>
+</div>
+<div class="meta" id="meta"></div>
+<div class="panel table-wrap"><div id="table"><div class="empty">Выбери валюты и нажми «Показать обменники».</div></div></div>
+</div>
+<script>
+const $=s=>document.querySelector(s); let currencies=[], changers=new Map(), lastRates=[];
+const from=$('#from'),to=$('#to'),load=$('#load'),status=$('#status'),table=$('#table'),meta=$('#meta'),search=$('#search');
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function fmt(v){if(v===null||v===undefined||v==='')return '—'; const n=Number(v); return Number.isFinite(n)?n.toLocaleString('ru-RU',{maximumFractionDigits:12}):esc(v)}
+function nameOf(r){return r.name || r.code || ('#'+r.id)}
+async function getJson(url){const r=await fetch(url);const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed');return j}
+async function init(){try{
+ const [c,ch]=await Promise.all([getJson('/api/currencies'),getJson('/api/changers')]); currencies=c.items; ch.items.forEach(x=>changers.set(String(x.id),x));
+ const opts=currencies.map(x=>`<option value="${x.id}">${esc(nameOf(x))}${x.code?` (${esc(x.code)})`:''}</option>`).join(''); from.innerHTML=opts; to.innerHTML=opts;
+ load.disabled = currencies.length < 2;
+ if(currencies.length>1){to.selectedIndex=1} status.textContent=currencies.length ? `Загружено валют: ${currencies.length}. Выбери пару.` : 'API вернул пустой список валют.';
+ }catch(e){status.textContent=e.message;status.className='status error';load.disabled=true}}
+function render(){const q=search.value.trim().toLowerCase();let rows=lastRates.filter(r=>{const c=changers.get(String(r.changerId));return !q || (c?.name||'').toLowerCase().includes(q)});
+ if(!rows.length){table.innerHTML='<div class="empty">По выбранному направлению предложений не найдено.</div>';return}
+ rows.sort((a,b)=>(Number(b.rate)||0)-(Number(a.rate)||0));
+ table.innerHTML=`<table class="table"><thead><tr><th>#</th><th>Обменник</th><th>Курс</th><th>Резерв</th><th>Мин.</th><th>Макс.</th><th></th></tr></thead><tbody>${rows.map((r,i)=>{const c=changers.get(String(r.changerId))||{};return `<tr><td>${i+1}</td><td><strong>${esc(c.name||('ID '+r.changerId))}</strong></td><td class="rate">${fmt(r.rate)}</td><td class="reserve">${fmt(r.reserve)}</td><td>${fmt(r.min)}</td><td>${fmt(r.max)}</td><td>${c.url?`<a class="link" href="${esc(c.url)}" target="_blank" rel="noopener">Перейти</a>`:'<span class="small">—</span>'}</td></tr>`}).join('')}</tbody></table>`;
+}
+load.onclick=async()=>{load.disabled=true;status.textContent='Получаю актуальные предложения…';meta.innerHTML='';try{const a=from.value,b=to.value;if(a===b)throw Error('Выбери разные валюты.');const j=await getJson(`/api/rates?from=${a}&to=${b}`);lastRates=j.rates||[];const f=currencies.find(x=>String(x.id)===a),t=currencies.find(x=>String(x.id)===b);meta.innerHTML=`<span><b>${esc(nameOf(f))}</b> → <b>${esc(nameOf(t))}</b></span><span><span class="badge">${lastRates.length} предложений</span></span><span>API: ${esc(j.host)}</span>`;render();status.textContent=`Обновлено: ${new Date().toLocaleTimeString('ru-RU')}`}catch(e){status.textContent=e.message;status.className='status error';table.innerHTML='<div class="empty">Не удалось получить курсы.</div>'}finally{load.disabled=false}};
+search.oninput=render; init();
+</script></body></html>
