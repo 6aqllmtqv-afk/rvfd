@@ -1,0 +1,7 @@
+# BestChange currency IDs, one pair per line
+# FROM-TO or FROM-TO-CITY
+# Examples from the official API documentation:
+305-89
+305-89-1
+31-12
+30-53
